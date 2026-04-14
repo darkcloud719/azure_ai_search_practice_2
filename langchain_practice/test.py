@@ -1,11 +1,15 @@
 from langchain_openai import AzureChatOpenAI
-from langchain_core.messages import HumanMessage, SystemMessage, AIMessage
 from langchain_core.prompts import ChatPromptTemplate
+from langchain_core.messages import HumanMessage, SystemMessage, AIMessage
 from langchain_core.output_parsers import StrOutputParser
+from langchain_core.runnables import RunnableLambda
 from dotenv import load_dotenv
-from rich import print
+from pydantic import BaseModel, Field
+from typing import Literal
+from rich import print 
 from rich.logging import RichHandler
 from rich.table import Table
+from rich.console import Console
 from rich.console import Console
 import time
 import os
@@ -24,9 +28,9 @@ file_handler = logging.FileHandler("app.log", mode="a", encoding="utf-8")
 file_handler.setLevel(logging.INFO)
 
 formatter = logging.Formatter(
-    "%(asctime)s - %(name)s - %(levelname)s - %(message)s",
+    "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
     datefmt="%Y-%m-%d %H:%M:%S"
-) 
+)
 
 file_handler.setFormatter(formatter)
 
@@ -45,32 +49,42 @@ AZURE_OPENAI_API_DEPLOYMENT_4O = os.getenv("AZURE_OPENAI_API_DEPLOYMENT_4O")
 llm_openai = AzureChatOpenAI(
     azure_endpoint=AZURE_OPENAI_API_ENDPOINT,
     deployment_name=AZURE_OPENAI_API_DEPLOYMENT_4O,
-    openai_api_version=AZURE_OPENAI_API_VERSION,
-    openai_api_key=AZURE_OPENAI_API_KEY
+    openai_api_key=AZURE_OPENAI_API_KEY,
+    openai_api_version=AZURE_OPENAI_API_VERSION
 )
 
-# Prompt
+class llm_schema(BaseModel):
+    movie_summary_flag: Literal["positive", "negative"]
 
-prompt = ChatPromptTemplate.from_messages([
-    ("system","You are a professional translator. Translate Mandarin to English."),
-    ("human","{input}")
+llm_structured_output = llm_openai.with_structured_output(llm_schema)
+
+# TASK - 1 [Prompt]
+prompt_template = ChatPromptTemplate.from_messages([
+    ("system","You are a movie review evaluator"),
+    ("human", "Please categorize the movie review as positive or negative: {input}")
 ])
 
-# Parser 
-parser = StrOutputParser()
+# TASK - 2 [LLM]
+llm_structured_output = llm_openai.with_structured_output(llm_schema)
 
-# Chain 
-chain = prompt | llm_openai | parser
+# TASK - 3 [Custom Runnable]
+def pydantic_json(input: llm_schema) -> str:
+    return input.model_dump()['movie_summary_flag']
 
-# Invoke
+pydantic_json_lambda = RunnableLambda(pydantic_json)
 
-msg = "教授跟我說:如果學東西要別人教你，你才開始學，那你就太弱了"
-result = chain.invoke({"input": msg})
+# Conditional Chain 1
+# TASK - 1 [Prompt]
+linkedin_prompt = ChatPromptTemplate.from_messages([
+    ("system","You are a LinkedIn post generator"),
+    ("human", "Create a post for the following text for LinkedIn: {text}")
+])
 
-table = Table(title="Translated Text")
-table.add_column("Input", style="cyan")
-table.add_column("Output", style="magenta")
-table.add_row(msg, result)
-console.print(table)
+# TASK - 2 [LLM]
 
+# TASK - 3 [Str Parser]
+
+str_parser = StrOutputParser()
+
+chain_linkedin = linkedin_prompt | llm_openai | str_parser
 
